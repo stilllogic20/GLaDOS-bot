@@ -1,5 +1,6 @@
 package jp.nephy.glados.feature.listener.music
 
+import jp.nephy.glados.component.audio.music.GuildPlayer
 import jp.nephy.glados.component.audio.music.PlayerEmoji
 import jp.nephy.glados.component.helper.*
 import jp.nephy.glados.feature.ListenerFeature
@@ -14,6 +15,14 @@ import kotlin.math.roundToInt
 class PlayerReactionWaiter: ListenerFeature() {
     private var skipForwardVote = 0
     private var clearVote = 0
+
+    private var voted = mutableListOf<Any>()
+
+    fun skip(guildPlayer: GuildPlayer) {
+        guildPlayer.controls.skipForward()
+        skipForwardVote = 0
+        voted.clear()
+    }
 
     override fun onGuildMessageReactionAdd(event: GuildMessageReactionAddEvent) {
         if (event.user.isSelf) {
@@ -102,13 +111,24 @@ class PlayerReactionWaiter: ListenerFeature() {
             PlayerEmoji.SkipForward -> {
                 if (guildPlayer.controls.isPlaying) {
                     if (config.role.admin != null && event.member.hasRole(config.role.admin)) {
-                        guildPlayer.controls.skipForward()
-                        skipForwardVote = 0
+                        skip(guildPlayer)
                         event.channel.embedMention(event.member) {
                             title("管理者特権で現在の曲をスキップしました。")
                             color(Color.Good)
                         }
                     } else {
+                        // TODO: Enable duplication in configuration
+                        if (voted.contains(event.member)) {
+                            event.channel.embedMention(event.member) {
+                                title("!!")
+                                descriptionBuilder {
+                                    append("\uD83D\uDE45 あなたはすでに投票しています!!")
+                                }
+                                color(Color.Bad)
+                            }
+                            return
+                        }
+
                         val requiredRate = 0.4
                         val voteCount = ++ skipForwardVote
                         val vcMembersCount = guildPlayer.voiceChannel.members.count { ! it.user.isBot }
@@ -119,8 +139,7 @@ class PlayerReactionWaiter: ListenerFeature() {
                         }
 
                         if (rate > requiredRate) {
-                            guildPlayer.controls.skipForward()
-                            skipForwardVote = 0
+                            skip(guildPlayer)
                             event.channel.embedMention(event.member) {
                                 title("スキップ投票が可決したので 現在の曲をスキップしました。")
                                 descriptionBuilder {
@@ -130,6 +149,7 @@ class PlayerReactionWaiter: ListenerFeature() {
                                 color(Color.Good)
                             }
                         } else {
+                            voted.add(event.member)
                             event.channel.embedMention(event.member) {
                                 title("スキップに投票しました。")
                                 descriptionBuilder {
